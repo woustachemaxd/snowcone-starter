@@ -1,8 +1,9 @@
 /**
  * Query Snowflake directly from the browser.
  *
- * Uses Snowflake's SQL REST API with session token authentication.
- * Credentials are read from your VITE_SNOWFLAKE_* env vars.
+ * Uses Snowflake's SQL REST API with JWT key-pair authentication.
+ * Connection config is read from VITE_SNOWFLAKE_* env vars.
+ * The private key is loaded from rsa_key.p8 in the project root.
  *
  * Usage:
  *   import { querySnowflake } from "@/lib/snowflake";
@@ -16,48 +17,56 @@
  *   `);
  */
 
+import { importPKCS8, SignJWT } from "jose";
+import PRIVATE_KEY_PEM from "../../rsa_key.p8?raw";
+
 const ACCOUNT = import.meta.env.VITE_SNOWFLAKE_ACCOUNT;
 const USER = import.meta.env.VITE_SNOWFLAKE_USER;
-const PASSWORD = import.meta.env.VITE_SNOWFLAKE_PASSWORD;
 const DATABASE = import.meta.env.VITE_SNOWFLAKE_DATABASE;
 const SCHEMA = import.meta.env.VITE_SNOWFLAKE_SCHEMA;
 const WAREHOUSE = import.meta.env.VITE_SNOWFLAKE_WAREHOUSE;
+const PUBLIC_KEY_FP = import.meta.env.VITE_SNOWFLAKE_PUBLIC_KEY_FP;
 
 const BASE_URL = `https://${ACCOUNT}.snowflakecomputing.com`;
 
-let sessionToken: string | null = null;
+let jwtToken: string | null = null;
+let jwtExpiry: number = 0;
 
 /**
- * Authenticate with Snowflake and get a session token.
+ * Generate a JWT token for Snowflake key-pair authentication
  */
-async function login(): Promise<string> {
-  if (sessionToken) return sessionToken;
+async function generateJWT(): Promise<string> {
+  const privateKey = await importPKCS8(PRIVATE_KEY_PEM, "RS256");
 
-  const res = await fetch(`${BASE_URL}/session/v1/login-request`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      data: {
-        ACCOUNT_NAME: ACCOUNT,
-        LOGIN_NAME: USER,
-        PASSWORD: PASSWORD,
-        CLIENT_APP_ID: "SnowconeApp",
-        CLIENT_APP_VERSION: "1.0.0",
-      },
-    }),
-  });
+  // Build claims per Snowflake docs — all UPPERCASE
+  const accountUpper = ACCOUNT!.toUpperCase();
+  const userUpper = USER!.toUpperCase();
 
-  if (!res.ok) {
-    throw new Error(`Snowflake login failed (${res.status})`);
+  const issuer = `${accountUpper}.${userUpper}.${PUBLIC_KEY_FP}`;
+  const subject = `${accountUpper}.${userUpper}`;
+
+  const now = Math.floor(Date.now() / 1000);
+
+  const token = await new SignJWT({})
+    .setProtectedHeader({ alg: "RS256", typ: "JWT" })
+    .setIssuer(issuer)
+    .setSubject(subject)
+    .setIssuedAt(now)
+    .setExpirationTime(now + 3600)
+    .sign(privateKey);
+
+  return token;
+}
+
+/**
+ * Get a valid JWT token, generating a new one if needed
+ */
+async function getJWT(): Promise<string> {
+  if (!jwtToken || Date.now() / 1000 > jwtExpiry - 30) {
+    jwtToken = await generateJWT();
+    jwtExpiry = Math.floor(Date.now() / 1000) + 3600;
   }
-
-  const json = await res.json();
-  if (!json.data?.token) {
-    throw new Error(json.message || "Snowflake login failed — no token returned");
-  }
-
-  sessionToken = json.data.token;
-  return sessionToken!;
+  return jwtToken;
 }
 
 /**
@@ -66,14 +75,14 @@ async function login(): Promise<string> {
 export async function querySnowflake<T = Record<string, unknown>>(
   sql: string
 ): Promise<T[]> {
-  const token = await login();
+  const token = await getJWT();
 
   const res = await fetch(`${BASE_URL}/api/v2/statements`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Snowflake Token="${token}"`,
-      "X-Snowflake-Authorization-Token-Type": "SNOWFLAKE",
+      Authorization: `Bearer ${token}`,
+      "X-Snowflake-Authorization-Token-Type": "KEYPAIR_JWT",
     },
     body: JSON.stringify({
       statement: sql,
@@ -92,9 +101,10 @@ export async function querySnowflake<T = Record<string, unknown>>(
   const json = await res.json();
 
   // The SQL API returns data in a columnar format — convert to row objects
-  const columns: string[] = json.resultSetMetaData?.rowType?.map(
-    (col: { name: string }) => col.name
-  ) ?? [];
+  const columns: string[] =
+    json.resultSetMetaData?.rowType?.map(
+      (col: { name: string }) => col.name
+    ) ?? [];
   const rows: string[][] = json.data ?? [];
 
   return rows.map((row) => {
