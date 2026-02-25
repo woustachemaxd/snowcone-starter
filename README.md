@@ -133,6 +133,6 @@ When you're done:
 ./submit.sh your.name@datamavericks.com
 ```
 
-Your app goes live at `data-apps-spec.deepanshu.tech/submission/your-name`.
+Your app goes live at `data-apps-spec-submissions.deepanshu.tech/submission/your-name`.
 
 Good luck!
