@@ -79,7 +79,7 @@ export default function App() {
         </span>
         <Link
           to="/data"
-          className="text-xs text-primary hover:underline font-medium"
+          className="text-xs text-primary underline font-bold"
         >
           View Database Schema →
         </Link>
@@ -113,7 +113,7 @@ export default function App() {
                 title="Explore the data"
               >
                 Head to the{" "}
-                <Link to="/data" className="text-primary underline">
+                <Link to="/data" className="text-primary underline font-bold">
                   Database Schema
                 </Link>{" "}
                 page to see every table, column, and some example queries.
