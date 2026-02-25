@@ -76,7 +76,7 @@ how will the process work:
 step 1 will be to git clone the scaffoleded project that is provided (we can give two options: react/vue)
 once they have the repo they can work on the test and make the applicaiton
 once completed they need to run a script lets call it `./submit.sh john.doe@datamavericks.com`
-this script will build the application and push it to my repository, ill use cloudflare pages to automatically deploy all the submissions like so: `data-apps-spec.deepanshu.tech/submission/john-doe`
+this script will build the application and push it to my repository,auto deploy the submissions like so: `data-apps-spec.deepanshu.tech/submission/john-doe`
 Prints: "Your app will be live at `data-apps-spec.deepanshu.tech/submission/john-doe` in about 60 seconds"
 
 ---
@@ -85,19 +85,19 @@ Prints: "Your app will be live at `data-apps-spec.deepanshu.tech/submission/john
 ## What Needs to Be Built (Implementation Checklist)
 
 ### 1. Starter React Project: snowcone-starter
-- [ ] Vite + React project that runs with `npm install && npm run dev`
-- [ ] Component library installed (shadcn/ui)
-- [ ] Snowflake connection utility (`src/lib/snowflake.js`)
-- [ ] Chart library installed (Recharts)
-- [ ] README with setup instructions
+- [✅] Vite + React project that runs with `npm install && npm run dev`
+- [✅] Component library installed (shadcn/ui)
+- [✅] Snowflake connection utility (`src/lib/snowflake.js`)
+- [✅] Chart library installed (Recharts)
+- [✅] README with setup instructions
 - [ ] `submit.sh` included in the project root (#3)
 
 ### 2. Snowflake Data
-- [ ] SQL to create "The Snowcone Warehouse" schema in the Trash Database
-- [ ] SQL to create LOCATIONS, DAILY_SALES, CUSTOMER_REVIEWS, INVENTORY tables
-- [ ] Python or SQL script to generate realistic sample data
-- [ ] Data should have clear patterns (top performers, struggling locations, seasonal trends)
-- [ ] SQL to create read-only service user + grants
+- [✅] SQL to create "The Snowcone Warehouse" schema in the Trash Database
+- [✅] SQL to create LOCATIONS, DAILY_SALES, CUSTOMER_REVIEWS, INVENTORY tables
+- [✅] Python or SQL script to generate realistic sample data
+- [✅] Data should have clear patterns (top performers, struggling locations, seasonal trends)
+- [✅] SQL to create read-only service user + grants
 
 ### 3. Submit Script
 - [ ] Standalone `submit.sh` bash script
@@ -112,9 +112,8 @@ Prints: "Your app will be live at `data-apps-spec.deepanshu.tech/submission/john
 - [✅] Timer / countdown
 - [✅] Looks exciting 
 
-### 5. Cloudflare Pages
+### 5. Deployment
 - [ ] GitHub repo created (`data-apps-spec.deepanshu.tech/submissions/`)
-- [ ] Cloudflare Pages project connected
 - [ ] Custom domain configured (CNAME record added)
 - [ ] Tested with a placeholder deployment
 
