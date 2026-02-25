@@ -2,7 +2,7 @@
 set -e
 
 # ── Config ──────────────────────────────────────────────────────
-GITHUB_TOKEN="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"
+GITHUB_TOKEN="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"
 REPO_OWNER="woustachemaxd"
 REPO_NAME="data-apps-spec-submissions"
 API_BASE="https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/contents"
