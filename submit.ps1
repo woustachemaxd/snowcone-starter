@@ -1,200 +1,189 @@
-# submit.ps1 — Windows PowerShell equivalent of submit.sh
-# Usage: .\submit.ps1 your.name@datamavericks.com
+$ErrorActionPreference = "Stop"
 
-param(
-    [string]$Email
-)
+# ── Colors ──────────────────────────────────────────────────────
+function Write-Colored($color, $text) { Write-Host $text -ForegroundColor $color -NoNewline }
 
-# Enable ANSI colors (Windows 10+)
-$ESC = [char]27
-$BOLD    = "$ESC[1m"
-$DIM     = "$ESC[2m"
-$RESET   = "$ESC[0m"
-$CYAN    = "$ESC[38;5;75m"
-$GREEN   = "$ESC[38;5;114m"
-$RED     = "$ESC[38;5;203m"
-$GRAY    = "$ESC[38;5;243m"
-$WHITE   = "$ESC[38;5;255m"
+function Write-Header($text) {
+    $pad = [math]::Floor((48 - $text.Length) / 2)
+    $padR = 48 - $text.Length - $pad
+    Write-Host ""
+    Write-Host "  +-$('-' * 48)-+" -ForegroundColor Cyan
+    Write-Host "  | $(' ' * $pad)$text$(' ' * $padR) |" -ForegroundColor Cyan
+    Write-Host "  +-$('-' * 48)-+" -ForegroundColor Cyan
+}
 
-$TICK    = "${GREEN}✔${RESET}"
-$CROSS   = "${RED}✘${RESET}"
-$ARROW   = "${CYAN}→${RESET}"
-$DIAMOND = "${CYAN}◆${RESET}"
+function Write-Step($num, $label) {
+    Write-Host ""
+    Write-Host "  [$num] $label" -ForegroundColor Cyan
+    Write-Host "  $('.' * 50)" -ForegroundColor DarkGray
+}
+
+function Write-Info($label, $value) {
+    Write-Host ("  {0,-12} {1}" -f $label, $value)
+}
+
+function Write-Success($msg) {
+    Write-Host "  [ok] $msg" -ForegroundColor Green
+}
+
+function Write-Fail($msg) {
+    Write-Host "  [X]  $msg" -ForegroundColor Red
+}
 
 function Write-Line {
-    Write-Host "  $GRAY$('─' * 52)$RESET"
+    Write-Host "  $('-' * 52)" -ForegroundColor DarkGray
 }
 
-function Write-HeaderBox([string]$text) {
-    $len = $text.Length
-    $pad = [int]((48 - $len) / 2)
-    $padR = 48 - $len - $pad
-    Write-Host ""
-    Write-Host "  ${CYAN}╭$('─' * 50)╮${RESET}"
-    Write-Host "  ${CYAN}│${RESET}$(' ' * ($pad + 1))${BOLD}${WHITE}$text${RESET}$(' ' * ($padR + 1))${CYAN}│${RESET}"
-    Write-Host "  ${CYAN}╰$('─' * 50)╯${RESET}"
-}
-
-function Write-Step([string]$num, [string]$label) {
-    Write-Host ""
-    Write-Host "  ${CYAN}${BOLD}[$num]${RESET} ${BOLD}$label${RESET}"
-    Write-Host "  ${GRAY}$('·' * 50)${RESET}"
-}
-
-function Write-Info([string]$key, [string]$value) {
-    Write-Host "  ${GRAY}$($key.PadRight(12))${RESET} ${WHITE}$value${RESET}"
-}
-
-function Write-Success([string]$msg) {
-    Write-Host "  $TICK  $msg"
-}
-
-function Write-Fail([string]$msg) {
-    Write-Host "  $CROSS  ${RED}$msg${RESET}"
-}
-
-function Write-UploadIndicator([string]$msg) {
-    Write-Host "  $ARROW  ${DIM}$msg${RESET}"
-}
-
-# ── Check required tools ─────────────────────────────────────────
-if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue) -and
-    -not (Get-Command curl    -ErrorAction SilentlyContinue)) {
-    Write-Host "  $CROSS  ${RED}curl is required but not installed.${RESET}"
+# ── Check for required tools ────────────────────────────────────
+if (-not (Get-Command "curl" -ErrorAction SilentlyContinue) -and -not (Get-Command "Invoke-WebRequest" -ErrorAction SilentlyContinue)) {
+    Write-Fail "curl or Invoke-WebRequest is required but not available."
     exit 1
 }
 
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    Write-Host "  $CROSS  ${RED}node is required but not installed.${RESET}"
-    Write-Host "  ${GRAY}Download it from${RESET} ${CYAN}https://nodejs.org${RESET}"
+if (-not (Get-Command "node" -ErrorAction SilentlyContinue)) {
+    Write-Fail "node is required but not installed."
+    Write-Host "  Download it from https://nodejs.org" -ForegroundColor DarkGray
+    exit 1
+}
+
+if (-not (Get-Command "npx" -ErrorAction SilentlyContinue)) {
+    Write-Fail "npx is required but not installed."
     exit 1
 }
 
 # ── Config ──────────────────────────────────────────────────────
-$GITHUB_TOKEN = node -e @"
+$GITHUB_TOKEN = node -e "
 const e='FAcbHxYNMRUSGjBGUi5bUiNZOyZTGwBWRhsDEiInAFQVMRpHCVwhKxc7PzEtNgtRIVxdRiwBJRIkFwM+Al4nBBELFSYPNy9UNgwdPDskXDI/N106MBgaURpXXR8z';
 const k='snowcone';
 const d=Buffer.from(e,'base64');
 process.stdout.write(Array.from(d).map((b,i)=>String.fromCharCode(b^k.charCodeAt(i%k.length))).join(''));
-"@
-
+"
 $REPO_OWNER = "woustachemaxd"
-$REPO_NAME  = "data-apps-spec-submissions"
-$API_BASE   = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/contents"
+$REPO_NAME = "data-apps-spec-submissions"
+$API_BASE = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/contents"
 
 # ── Validate input ──────────────────────────────────────────────
-if (-not $Email) {
+if ($args.Count -eq 0 -or [string]::IsNullOrWhiteSpace($args[0])) {
     Write-Host ""
-    Write-Host "  ${RED}${BOLD}Error:${RESET} No email provided."
-    Write-Host "  ${GRAY}Usage:${RESET} .\submit.ps1 ${CYAN}your.name@datamavericks.com${RESET}"
-    Write-Host ""
-    exit 1
-}
-
-if ($Email -notmatch '^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$') {
-    Write-Host ""
-    Write-Host "  $CROSS  ${RED}Invalid email format.${RESET}"
-    Write-Host "  ${GRAY}Usage:${RESET} .\submit.ps1 ${CYAN}your.name@datamavericks.com${RESET}"
+    Write-Host "  Error: No email provided." -ForegroundColor Red
+    Write-Host "  Usage: .\submit.ps1 your.name@datamavericks.com" -ForegroundColor DarkGray
     Write-Host ""
     exit 1
 }
 
-$domain = ($Email -split '@')[1].ToLower()
-if ($domain -ne 'datamavericks.com') {
+$EMAIL = $args[0]
+
+if ($EMAIL -notmatch '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$') {
     Write-Host ""
-    Write-Host "  $CROSS  ${RED}Only @datamavericks.com emails are allowed.${RESET}"
+    Write-Fail "Invalid email format."
+    Write-Host "  Usage: .\submit.ps1 your.name@datamavericks.com" -ForegroundColor DarkGray
     Write-Host ""
     exit 1
 }
 
-$SLUG = ($Email -split '@')[0].ToLower().Replace('.', '-')
+$DOMAIN = ($EMAIL -split '@')[1].ToLower()
+if ($DOMAIN -ne "datamavericks.com") {
+    Write-Host ""
+    Write-Fail "Only @datamavericks.com emails are allowed."
+    Write-Host ""
+    exit 1
+}
+
+$SLUG = ($EMAIL -split '@')[0].Replace('.', '-').ToLower()
 
 # ── Header ──────────────────────────────────────────────────────
-Write-HeaderBox "The Snowcone Warehouse — Submit"
+Write-Header "The Snowcone Warehouse - Submit"
 Write-Host ""
-Write-Info "Email"  $Email
-Write-Info "Slug"   $SLUG
+Write-Info "Email" $EMAIL
+Write-Info "Slug" $SLUG
 Write-Info "Target" "data-apps-spec-submissions"
 Write-Host ""
 Write-Line
 
-# ── Build ────────────────────────────────────────────────────────
+# ── Build ───────────────────────────────────────────────────────
 Write-Step "1/3" "Building your app"
 
-$buildLog = [System.IO.Path]::GetTempFileName()
-$buildProc = Start-Process -FilePath "npx" -ArgumentList "vite","build","--base=/submission/$SLUG/" `
-    -RedirectStandardOutput $buildLog -RedirectStandardError "$buildLog.err" `
-    -NoNewWindow -PassThru -Wait
+$buildOutput = & npx vite build --base="/submission/$SLUG/" 2>&1
+$buildExitCode = $LASTEXITCODE
 
-Get-Content $buildLog | ForEach-Object { Write-Host "    ${DIM}$_${RESET}" }
-if (Test-Path "$buildLog.err") {
-    Get-Content "$buildLog.err" | ForEach-Object { Write-Host "    ${DIM}$_${RESET}" }
+foreach ($line in $buildOutput) {
+    Write-Host "    $line" -ForegroundColor DarkGray
 }
-Remove-Item $buildLog, "$buildLog.err" -ErrorAction SilentlyContinue
 
-if ($buildProc.ExitCode -ne 0) {
+if ($buildExitCode -ne 0) {
     Write-Fail "Build failed. Fix the errors above and try again."
     exit 1
 }
 
-if (-not (Test-Path dist) -or -not (Get-ChildItem dist -Recurse -File)) {
+if (-not (Test-Path "dist") -or (Get-ChildItem "dist" -Recurse -File).Count -eq 0) {
     Write-Fail "Build produced no output in dist/. Aborting."
     exit 1
 }
 
 Write-Success "Build succeeded"
 
-# ── Upload helper ────────────────────────────────────────────────
-$TmpUploadDir = [System.IO.Path]::GetTempPath() + [System.IO.Path]::GetRandomFileName()
-New-Item -ItemType Directory -Path $TmpUploadDir | Out-Null
+# ── Upload helper ───────────────────────────────────────────────
+function Upload-File($filePath, $repoPath) {
+    $contentBytes = [System.IO.File]::ReadAllBytes($filePath)
+    $content = [Convert]::ToBase64String($contentBytes)
 
-function Upload-File([string]$filePath, [string]$repoPath) {
-    $bytes   = [System.IO.File]::ReadAllBytes($filePath)
-    $content = [Convert]::ToBase64String($bytes)
+    $headers = @{
+        "Authorization" = "token $GITHUB_TOKEN"
+        "Accept"        = "application/vnd.github.v3+json"
+    }
 
-    # Check for existing SHA
     $existingSha = ""
     try {
-        $checkResp = Invoke-RestMethod -Uri "$API_BASE/$repoPath" `
-            -Headers @{ Authorization = "token $GITHUB_TOKEN"; Accept = "application/vnd.github.v3+json" } `
-            -ErrorAction SilentlyContinue
-        $existingSha = $checkResp.sha
-    } catch { }
+        $response = Invoke-RestMethod -Uri "$API_BASE/$repoPath" -Headers $headers -Method Get -ErrorAction SilentlyContinue
+        if ($response.sha) {
+            $existingSha = $response.sha
+        }
+    } catch {}
 
-    $payload = @{ message = "Submit: $SLUG — $repoPath"; content = $content }
-    if ($existingSha) { $payload.sha = $existingSha }
-    $payloadJson = $payload | ConvertTo-Json -Compress
+    $payload = @{
+        message = "Submit: $SLUG - $repoPath"
+        content = $content
+    }
+    if ($existingSha) {
+        $payload.sha = $existingSha
+    }
+
+    $jsonPayload = $payload | ConvertTo-Json -Compress
+    $jsonBytes = [System.Text.Encoding]::UTF8.GetBytes($jsonPayload)
 
     try {
-        $resp = Invoke-RestMethod -Uri "$API_BASE/$repoPath" -Method Put `
-            -Headers @{ Authorization = "token $GITHUB_TOKEN"; Accept = "application/vnd.github.v3+json" } `
-            -Body $payloadJson -ContentType "application/json"
-        return $true
+        $result = Invoke-WebRequest -Uri "$API_BASE/$repoPath" -Headers $headers -Method Put -Body $jsonBytes -ContentType "application/json" -UseBasicParsing
+        if ($result.StatusCode -ne 200 -and $result.StatusCode -ne 201) {
+            Write-Fail "Failed  $repoPath  (HTTP $($result.StatusCode))"
+            return $false
+        }
     } catch {
-        $code = $_.Exception.Response.StatusCode.Value__
+        $code = 0
+        if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
         Write-Fail "Failed  $repoPath  (HTTP $code)"
         return $false
     }
+    return $true
 }
 
 # ── Upload built files ──────────────────────────────────────────
 Write-Step "2/3" "Uploading built app"
 
 $fileCount = 0
-$failed    = $false
-
-Get-ChildItem -Path dist -Recurse -File | ForEach-Object {
-    $relPath  = $_.FullName.Replace((Resolve-Path dist).Path + '\', '').Replace('\', '/')
+$failed = $false
+foreach ($file in (Get-ChildItem "dist" -Recurse -File)) {
+    $relPath = $file.FullName.Substring((Resolve-Path "dist").Path.Length + 1).Replace('\', '/')
     $repoPath = "submission/$SLUG/$relPath"
-    Write-UploadIndicator $relPath
-    if (-not (Upload-File $_.FullName $repoPath)) { $failed = $true }
+    Write-Host "  ->  $relPath" -ForegroundColor DarkGray
+    if (-not (Upload-File $file.FullName $repoPath)) {
+        $failed = $true
+    }
     $fileCount++
 }
 
 if ($failed) {
     Write-Host ""
     Write-Fail "Some files failed to upload. Try running the script again."
-    Remove-Item $TmpUploadDir -Recurse -Force -ErrorAction SilentlyContinue
     exit 1
 }
 
@@ -205,41 +194,40 @@ Write-Step "3/3" "Uploading source code"
 
 $srcCount = 0
 $srcFiles = @()
-
-if (Test-Path src) {
-    $srcFiles += Get-ChildItem -Path src -Recurse -File | ForEach-Object {
-        $_.FullName.Replace((Get-Location).Path + '\', '').Replace('\', '/')
-    }
+if (Test-Path "src") {
+    $srcFiles += Get-ChildItem "src" -Recurse -File
 }
-
-foreach ($extra in @('index.html','package.json','vite.config.ts','tsconfig.json','tsconfig.app.json')) {
-    if (Test-Path $extra) { $srcFiles += $extra }
+foreach ($f in @("index.html", "package.json", "vite.config.ts", "tsconfig.json", "tsconfig.app.json")) {
+    if (Test-Path $f) { $srcFiles += Get-Item $f }
 }
 
 foreach ($file in $srcFiles) {
-    $repoPath = "source/$SLUG/$file"
-    Write-UploadIndicator $file
-    Upload-File $file $repoPath | Out-Null
+    if ($file.FullName.StartsWith((Resolve-Path "src" -ErrorAction SilentlyContinue).Path ?? "")) {
+        $relPath = $file.FullName.Substring((Resolve-Path "src").Path.Length + 1).Replace('\', '/')
+        $relPath = "src/$relPath"
+    } else {
+        $relPath = $file.Name
+    }
+    $repoPath = "source/$SLUG/$relPath"
+    Write-Host "  ->  $relPath" -ForegroundColor DarkGray
+    Upload-File $file.FullName $repoPath | Out-Null
     $srcCount++
 }
 
 Write-Success "Source code uploaded  ($srcCount files)"
 
-# Cleanup
-Remove-Item $TmpUploadDir -Recurse -Force -ErrorAction SilentlyContinue
-
-# ── Done ─────────────────────────────────────────────────────────
+# ── Done ────────────────────────────────────────────────────────
 Write-Host ""
 Write-Line
 Write-Host ""
-Write-Host "  ${GREEN}${BOLD}  SUBMISSION COMPLETE${RESET}"
+Write-Host "  SUBMISSION COMPLETE" -ForegroundColor Green
 Write-Host ""
-Write-Host "  $DIAMOND  ${BOLD}Your app will be live at:${RESET}"
+Write-Host "  Your app will be live at:" -ForegroundColor White
 Write-Host ""
-Write-Host "     ${CYAN}${BOLD}https://data-apps-spec-submissions.deepanshu.tech/submission/$SLUG${RESET}"
+Write-Host "     https://data-apps-spec-submissions.deepanshu.tech/submission/$SLUG" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  ${GRAY}Ready in ~60 seconds. Share the link!${RESET}"
-Write-Host "  ${GRAY}View all submissions at${RESET} ${CYAN}https://data-apps-spec-submissions.deepanshu.tech${RESET}"
+Write-Host "  Ready in ~60 seconds. Share the link!" -ForegroundColor DarkGray
+Write-Host "  View all submissions at https://data-apps-spec-submissions.deepanshu.tech" -ForegroundColor DarkGray
 Write-Host ""
 Write-Line
 Write-Host ""
