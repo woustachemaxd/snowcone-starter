@@ -111,10 +111,14 @@ Write-Line
 # ── Build ───────────────────────────────────────────────────────
 Write-Step "1/3" "Building your app"
 
-& npx vite build --base="/submission/$SLUG/" 2>&1 | Tee-Object -Variable buildOutput | ForEach-Object {
-    Write-Host "    $_" -ForegroundColor DarkGray
-}
+$ErrorActionPreference = "Continue"
+$buildOutput = & npx vite build --base="/submission/$SLUG/" 2>&1
 $buildExitCode = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+
+foreach ($line in $buildOutput) {
+    Write-Host "    $line" -ForegroundColor DarkGray
+}
 
 if ($buildExitCode -ne 0) {
     Write-Fail "Build failed. Fix the errors above and try again."
