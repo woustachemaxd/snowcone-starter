@@ -92,7 +92,7 @@ export default function App() {
             YOUR STARTING POINT
           </p>
           <h1 className="text-3xl font-bold tracking-tight">
-            SNOWCONE TEST PUSH
+            Welcome to the Snowcone Starter
           </h1>
           <p className="text-muted-foreground mt-2 max-w-xl">
             This page confirms your Snowflake connection is working and shows
