@@ -1,8 +1,6 @@
 $ErrorActionPreference = "Stop"
 
 # ── Colors ──────────────────────────────────────────────────────
-function Write-Colored($color, $text) { Write-Host $text -ForegroundColor $color -NoNewline }
-
 function Write-Header($text) {
     $pad = [math]::Floor((48 - $text.Length) / 2)
     $padR = 48 - $text.Length - $pad
@@ -34,12 +32,16 @@ function Write-Line {
     Write-Host "  $('-' * 52)" -ForegroundColor DarkGray
 }
 
-# ── Check for required tools ────────────────────────────────────
-if (-not (Get-Command "curl" -ErrorAction SilentlyContinue) -and -not (Get-Command "Invoke-WebRequest" -ErrorAction SilentlyContinue)) {
-    Write-Fail "curl or Invoke-WebRequest is required but not available."
-    exit 1
+# ── Helper: get relative path safely ───────────────────────────
+function Get-RelativeTo($base, $full) {
+    $basePath = $base.TrimEnd('\', '/')
+    if ($full.StartsWith($basePath)) {
+        return $full.Substring($basePath.Length).TrimStart('\', '/').Replace('\', '/')
+    }
+    return $full.Replace('\', '/')
 }
 
+# ── Check for required tools ────────────────────────────────────
 if (-not (Get-Command "node" -ErrorAction SilentlyContinue)) {
     Write-Fail "node is required but not installed."
     Write-Host "  Download it from https://nodejs.org" -ForegroundColor DarkGray
@@ -52,12 +54,18 @@ if (-not (Get-Command "npx" -ErrorAction SilentlyContinue)) {
 }
 
 # ── Config ──────────────────────────────────────────────────────
-$GITHUB_TOKEN = node -e "
+$GITHUB_TOKEN = node -e @'
 const e='FAcbHxYNMRUSGjBGUi5bUiNZOyZTGwBWRhsDEiInAFQVMRpHCVwhKxc7PzEtNgtRIVxdRiwBJRIkFwM+Al4nBBELFSYPNy9UNgwdPDskXDI/N106MBgaURpXXR8z';
 const k='snowcone';
 const d=Buffer.from(e,'base64');
 process.stdout.write(Array.from(d).map((b,i)=>String.fromCharCode(b^k.charCodeAt(i%k.length))).join(''));
-"
+'@
+
+if ([string]::IsNullOrWhiteSpace($GITHUB_TOKEN)) {
+    Write-Fail "Failed to extract GitHub token. Is Node.js working?"
+    exit 1
+}
+
 $REPO_OWNER = "woustachemaxd"
 $REPO_NAME = "data-apps-spec-submissions"
 $API_BASE = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/contents"
@@ -103,19 +111,17 @@ Write-Line
 # ── Build ───────────────────────────────────────────────────────
 Write-Step "1/3" "Building your app"
 
-$buildOutput = & npx vite build --base="/submission/$SLUG/" 2>&1
-$buildExitCode = $LASTEXITCODE
-
-foreach ($line in $buildOutput) {
-    Write-Host "    $line" -ForegroundColor DarkGray
+& npx vite build --base="/submission/$SLUG/" 2>&1 | Tee-Object -Variable buildOutput | ForEach-Object {
+    Write-Host "    $_" -ForegroundColor DarkGray
 }
+$buildExitCode = $LASTEXITCODE
 
 if ($buildExitCode -ne 0) {
     Write-Fail "Build failed. Fix the errors above and try again."
     exit 1
 }
 
-if (-not (Test-Path "dist") -or (Get-ChildItem "dist" -Recurse -File).Count -eq 0) {
+if (-not (Test-Path "dist") -or @(Get-ChildItem "dist" -Recurse -File).Count -eq 0) {
     Write-Fail "Build produced no output in dist/. Aborting."
     exit 1
 }
@@ -134,11 +140,13 @@ function Upload-File($filePath, $repoPath) {
 
     $existingSha = ""
     try {
-        $response = Invoke-RestMethod -Uri "$API_BASE/$repoPath" -Headers $headers -Method Get -ErrorAction SilentlyContinue
-        if ($response.sha) {
+        $response = Invoke-RestMethod -Uri "$API_BASE/$repoPath" -Headers $headers -Method Get -ErrorAction Stop
+        if ($response -and $response.sha) {
             $existingSha = $response.sha
         }
-    } catch {}
+    } catch {
+        # File doesn't exist yet (404) — that's fine
+    }
 
     $payload = @{
         message = "Submit: $SLUG - $repoPath"
@@ -169,10 +177,11 @@ function Upload-File($filePath, $repoPath) {
 # ── Upload built files ──────────────────────────────────────────
 Write-Step "2/3" "Uploading built app"
 
+$distRoot = (Resolve-Path "dist").Path
 $fileCount = 0
 $failed = $false
 foreach ($file in (Get-ChildItem "dist" -Recurse -File)) {
-    $relPath = $file.FullName.Substring((Resolve-Path "dist").Path.Length + 1).Replace('\', '/')
+    $relPath = Get-RelativeTo $distRoot $file.FullName
     $repoPath = "submission/$SLUG/$relPath"
     Write-Host "  ->  $relPath" -ForegroundColor DarkGray
     if (-not (Upload-File $file.FullName $repoPath)) {
@@ -201,10 +210,12 @@ foreach ($f in @("index.html", "package.json", "vite.config.ts", "tsconfig.json"
     if (Test-Path $f) { $srcFiles += Get-Item $f }
 }
 
+$srcRoot = ""
+if (Test-Path "src") { $srcRoot = (Resolve-Path "src").Path }
+
 foreach ($file in $srcFiles) {
-    if ($file.FullName.StartsWith((Resolve-Path "src" -ErrorAction SilentlyContinue).Path ?? "")) {
-        $relPath = $file.FullName.Substring((Resolve-Path "src").Path.Length + 1).Replace('\', '/')
-        $relPath = "src/$relPath"
+    if ($srcRoot -and $file.FullName.StartsWith($srcRoot)) {
+        $relPath = "src/" + (Get-RelativeTo $srcRoot $file.FullName)
     } else {
         $relPath = $file.Name
     }
