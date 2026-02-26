@@ -142,6 +142,8 @@ Use any AI tools, any resources. Focus on solving the problem and having fun wit
 ./submit.sh john.doe@datamavericks.com  // your company email
 ```
 
+Windows users: use `submit.ps1` instead — `.\submit.ps1 john.doe@datamavericks.com`
+
 **Your app goes live at:**
 ```
 https://data-apps-spec-submissions.deepanshu.tech/john-doe
