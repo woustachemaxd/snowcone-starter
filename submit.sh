@@ -70,6 +70,18 @@ upload_indicator() {
   printf "  ${ARROW}  ${DIM}%s${RESET}\n" "$1"
 }
 
+# ── Check for required tools (before anything else) ─────────────
+if ! command -v curl &> /dev/null; then
+  printf "  ${CROSS}  ${RED}curl is required but not installed.${RESET}\n"
+  exit 1
+fi
+
+if ! command -v node &> /dev/null; then
+  printf "  ${CROSS}  ${RED}node is required but not installed.${RESET}\n"
+  printf "  ${GRAY}Download it from${RESET} ${CYAN}https://nodejs.org${RESET}\n"
+  exit 1
+fi
+
 # ── Config ──────────────────────────────────────────────────────
 GITHUB_TOKEN=$(node -e "
 const e='FAcbHxYNMRUSGjBGUi5bUiNZOyZTGwBWRhsDEiInAFQVMRpHCVwhKxc7PzEtNgtRIVxdRiwBJRIkFwM+Al4nBBELFSYPNy9UNgwdPDskXDI/N106MBgaURpXXR8z';
@@ -108,18 +120,6 @@ if [ "$DOMAIN" != "datamavericks.com" ]; then
   exit 1
 fi
 
-# Check for required tools
-if ! command -v curl &> /dev/null; then
-  printf "  ${CROSS}  ${RED}curl is required but not installed.${RESET}\n"
-  exit 1
-fi
-
-if ! command -v node &> /dev/null; then
-  printf "  ${CROSS}  ${RED}node is required but not installed.${RESET}\n"
-  printf "  ${GRAY}Download it from${RESET} ${CYAN}https://nodejs.org${RESET}\n"
-  exit 1
-fi
-
 # Derive slug
 SLUG=$(echo "$EMAIL" | cut -d'@' -f1 | tr '.' '-' | tr '[:upper:]' '[:lower:]')
 
@@ -136,9 +136,24 @@ line
 # ── Build ────────────────────────────────────────────────────────
 step "1/3" "Building your app"
 
-npx vite build --base="/submission/$SLUG/" 2>&1 | while IFS= read -r build_line; do
+BUILD_LOG=$(mktemp)
+if ! npx vite build --base="/submission/$SLUG/" >"$BUILD_LOG" 2>&1; then
+  while IFS= read -r build_line; do
+    printf "  ${DIM}  %s${RESET}\n" "$build_line"
+  done < "$BUILD_LOG"
+  rm -f "$BUILD_LOG"
+  fail "Build failed. Fix the errors above and try again."
+  exit 1
+fi
+while IFS= read -r build_line; do
   printf "  ${DIM}  %s${RESET}\n" "$build_line"
-done
+done < "$BUILD_LOG"
+rm -f "$BUILD_LOG"
+
+if [ ! -d dist ] || [ -z "$(find dist -type f -print -quit)" ]; then
+  fail "Build produced no output in dist/. Aborting."
+  exit 1
+fi
 
 success "Build succeeded"
 
@@ -216,7 +231,7 @@ while IFS= read -r file; do
   upload_indicator "$file"
   upload_file "$file" "$repo_path" || true
   SRC_COUNT=$((SRC_COUNT + 1))
-done < <(find src -type f; echo "index.html"; echo "package.json"; echo "vite.config.ts"; echo "tsconfig.json"; echo "tsconfig.app.json")
+done < <(find src -type f; for f in index.html package.json vite.config.ts tsconfig.json tsconfig.app.json; do [ -f "$f" ] && echo "$f"; done)
 
 success "Source code uploaded  ($SRC_COUNT files)"
 
