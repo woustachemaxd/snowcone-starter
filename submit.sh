@@ -178,12 +178,15 @@ upload_file() {
   existing_sha=$(echo "$response" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{process.stdout.write(JSON.parse(d).sha||'')}catch(e){}})" 2>/dev/null || echo "")
 
   local payload_file="$TMPDIR_UPLOAD/payload.json"
+  local content_file="$TMPDIR_UPLOAD/content.txt"
+  echo -n "$content" > "$content_file"
   node -e "
 const fs=require('fs');
-const d={message:'Submit: $SLUG — $repo_path',content:process.argv[1]};
+const content=fs.readFileSync(process.argv[1],'utf8');
+const d={message:'Submit: $SLUG — $repo_path',content:content};
 if(process.argv[2])d.sha=process.argv[2];
 fs.writeFileSync(process.argv[3],JSON.stringify(d));
-" "$content" "$existing_sha" "$payload_file"
+" "$content_file" "$existing_sha" "$payload_file"
 
   local http_code
   http_code=$(curl -s -o /dev/null -w "%{http_code}" \
